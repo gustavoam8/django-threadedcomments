@@ -1,19 +1,24 @@
-from unittest import TestCase
+from unittest import TestCase, expectedFailure
 
-from django.test import TransactionTestCase
-from django.contrib.sites.models import Site
-from django.template import loader, TemplateSyntaxError
 from django.conf import settings
-from .compat import django_comments as comments
-
-from threadedcomments.util import annotate_tree_properties
+from django.contrib.sites.models import Site
+from django.core.management import call_command
+from django.template import Context
+from django.template import Template
+from django.template import TemplateSyntaxError, loader
+from django.test import TransactionTestCase
 from threadedcomments.templatetags import threadedcomments_tags as tags
+from threadedcomments.util import annotate_tree_properties
+
+from .compat import django_comments as comments
 
 PATH_SEPARATOR = getattr(settings, 'COMMENT_PATH_SEPARATOR', '/')
 PATH_DIGITS = getattr(settings, 'COMMENT_PATH_DIGITS', 10)
 
+
 def sanitize_html(html):
     return '\n'.join((i.strip() for i in html.split('\n') if i.strip() != ''))
+
 
 class SanityTests(TransactionTestCase):
     BASE_DATA = {
@@ -213,24 +218,77 @@ class HierarchyTest(TransactionTestCase):
         self.assertEqual(last_child, comment.last_child)
 
 
+class SimpleTemplateTagTests(TransactionTestCase):
+    if 'django.contrib.comments' in settings.INSTALLED_APPS:
+        fixtures = ['simple_tree_old']
+    else:
+        fixtures = ['simple_tree']
+
+    def get_comment_count(self):
+        template = Template('{% load threadedcomments_tags %}{% get_comment_count for sites.site 1 as foo %}{{ foo }}')
+        html = template.render(Context()).strip()
+        self.assertEqual(html, '7')
+
+    def test_get_comment_list(self):
+        template = Template('{% load threadedcomments_tags %}{% get_comment_list for sites.site 1 as foo %}{{ foo|length }}')
+        html = template.render(Context()).strip()
+        self.assertEqual(html, '7')
+
+    def test_render_comment_list(self):
+        template = Template('{% load threadedcomments_tags %}{% render_comment_list for sites.site 1 %}')
+        html = sanitize_html(template.render(Context()))
+        self.assertIn('Comment 7', html)
+
+    def test_render_comment_form(self):
+        template = Template('{% load threadedcomments_tags %}{% render_comment_form for sites.site 1 %}')
+        html = sanitize_html(template.render(Context()))
+        self.assertIn(' name="parent" ', html)
+
+    def test_get_comment_form(self):
+        template = Template('{% load threadedcomments_tags %}{% get_comment_form for sites.site 1 as foo %}{{ foo.parent }}')
+        html = sanitize_html(template.render(Context()))
+        self.assertIn(' name="parent" ', html)
+        self.assertNotIn('<form', html)
+
+
+class ManagementCommandTests(TransactionTestCase):
+
+    if 'django.contrib.comments' in settings.INSTALLED_APPS:
+        fixtures = ['simple_tree_old']
+    else:
+        fixtures = ['simple_tree']
+
+    @expectedFailure
+    def test_migrate_comments(self):
+        call_command('migrate_comments')
+
+    @expectedFailure
+    def test_migrate_threaded_comments(self):
+        call_command('migrate_threaded_comments')
+
+
 
 # Templatetags tests
 ##############################################################################
 
 class MockParser(object):
     "Mock parser object for handle_token()"
+
     def compile_filter(self, var):
         return var
 mock_parser = MockParser()
 
+
 class MockToken(object):
     "Mock token object for handle_token()"
+
     def __init__(self, bits):
         self.contents = self
         self.bits = bits
 
     def split(self):
         return self.bits
+
 
 class TestCommentListNode(TestCase):
 
@@ -240,6 +298,7 @@ class TestCommentListNode(TestCase):
     """
     correct_ct_pk_params = ['get_comment_list', 'for', 'sites.site', '1', 'as', 'var']
     correct_var_params = ['get_comment_list', 'for', 'var', 'as', 'var']
+
     def test_parsing_fails_for_empty_token(self):
         self.assertRaises(TemplateSyntaxError, tags.get_comment_list, mock_parser, MockToken(['get_comment_list']))
 
@@ -288,4 +347,3 @@ class TestCommentListNode(TestCase):
         node = tags.get_comment_list(mock_parser, MockToken(params))
         self.assertTrue(isinstance(node, tags.CommentListNode))
         self.assertTrue(node.root_only)
-

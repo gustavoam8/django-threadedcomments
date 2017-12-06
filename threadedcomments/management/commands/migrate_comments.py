@@ -1,6 +1,6 @@
-from django.core.management.base import NoArgsCommand
-from django.db import transaction, connection
 from django.conf import settings
+from django.core.management import BaseCommand, CommandError
+from django.db import connection, transaction
 
 PATH_DIGITS = getattr(settings, 'COMMENT_PATH_DIGITS', 10)
 
@@ -20,17 +20,14 @@ SELECT id as comment_ptr_id,
 FROM django_comments;
 """ % ''.zfill(PATH_DIGITS)
 
-class Command(NoArgsCommand):
+
+class Command(BaseCommand):
     help = "Migrates from django.contrib.comments to django-threadedcomments"
 
     def handle(self, *args, **options):
-        transaction.commit_unless_managed()
-        transaction.enter_transaction_management()
-        transaction.managed(True)
+        if args:
+            raise CommandError("Command doesn't accept any arguments")
 
-        cursor = connection.cursor()
-
-        cursor.execute(SQL)
-
-        transaction.commit()
-        transaction.leave_transaction_management()
+        with transaction.atomic():
+            cursor = connection.cursor()
+            cursor.execute(SQL)

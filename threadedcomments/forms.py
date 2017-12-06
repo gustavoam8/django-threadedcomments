@@ -2,8 +2,9 @@ import django
 from django import forms
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
-from .models import ThreadedComment
+
 from .compat import CommentForm
+from .models import ThreadedComment
 
 
 class ThreadedCommentForm(CommentForm):
@@ -11,7 +12,7 @@ class ThreadedCommentForm(CommentForm):
     parent = forms.IntegerField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, target_object, parent=None, data=None, initial=None):
-        if django.VERSION >= (1,7):
+        if django.VERSION >= (1, 7):
             # Using collections.OrderedDict from Python 2.7+
             # This class does not have an insert method, have to replace it.
             from collections import OrderedDict
@@ -34,8 +35,8 @@ class ThreadedCommentForm(CommentForm):
     def get_comment_model(self):
         return ThreadedComment
 
-    def get_comment_create_data(self, site_id=None):
-        d = super(ThreadedCommentForm, self).get_comment_create_data(site_id)
+    def get_comment_create_data(self, *args, **kwargs):
+        d = super(ThreadedCommentForm, self).get_comment_create_data(*args, **kwargs)
         d['parent_id'] = self.cleaned_data['parent']
-        d['title'] = self.cleaned_data['title']
+        d['title'] = self.cleaned_data.get('title', '')  # title can be removed
         return d
